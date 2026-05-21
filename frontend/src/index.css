@@ -1,0 +1,32 @@
+/* src/index.css */
+
+/* @import は他のすべての文より先に記述する必要がある（CSS仕様） */
+@import url("https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@700&family=Roboto:wght@700;800;900&display=swap");
+@import "tailwindcss";
+
+:root {
+  --green: #00fa27;
+  --green-dim: #00aa14;
+  --black: #000;
+  --s1: #0a0a0a;
+  --s2: #141516;
+  --s3: #1e2022;
+  --border: #2a2c2e;
+  --white: #fff;
+  --dim: #cdcfd4;
+  --grey: #7e8085;
+  --red: #e4250e;
+  --amber: #f5a623;
+  --ease: cubic-bezier(0.32, 0.48, 0, 1);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: "Zen Kaku Gothic New", sans-serif;
+  font-weight: 700;
+  background: var(--black);
+  color: var(--white);
+}

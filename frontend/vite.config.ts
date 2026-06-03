@@ -12,12 +12,9 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        ws: true,           // ← これを追加（/api/ws もプロキシ対象になる）
       },
-      // /ws のみプロキシ（Vite自身のHMR用WebSocketと衝突しないよう厳密にマッチ）
-      "^/ws$": {
-        target: "ws://localhost:8000",
-        ws: true,
-      },
+      // "/ws" のプロキシは削除
     },
   },
 });

@@ -247,7 +247,7 @@ function useWebSocket(onMessage: (data: any) => void) {
   useEffect(() => {
     function connect() {
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
       ws.onopen = () => console.log("[WS] 接続完了");
       ws.onmessage = (e) => {
         try { cbRef.current(JSON.parse(e.data)); } catch {}

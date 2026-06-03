@@ -526,8 +526,8 @@ def get_session():
         "totalPickingQty": sum(item["qty"] for item in session["picking"]),
     }
 
-
-@app.websocket("/ws")
+# 変更後
+@app.websocket("/api/ws")
 async def websocket_endpoint(ws: WebSocket):
     await manager.connect(ws)
     try:

@@ -391,7 +391,7 @@ def parse_order_page(text: str) -> dict | None:
                         break
                     k += 1
 
-                short_name = re.sub(r"\s+", " ", name_raw).strip()[:40]
+                short_name = re.sub(r"\s+", " ", name_raw).strip()[:80]
                 products.append({
                     "code": code,
                     "name": short_name,

@@ -39,6 +39,77 @@ type Order = {
 type Phase = "home" | "picking" | "pickingSummary" | "packing" | "packingSummary";
 type Carrier = "" | "sagawa" | "yamato";
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 梱包チェック用の定数・ヘルパー
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// --- 高温注意シート判定 ---
+// sandal-002（麻サンダル）は除外。
+// sandal-004wakeari 等の派生コードも対象にするため startsWith で判定。
+const CAUTION_SANDAL_PREFIXES = ["sandal-004", "sandal-007", "sandal-008"];
+
+const isCautionSandal = (code: string): boolean =>
+  CAUTION_SANDAL_PREFIXES.some(prefix => code.startsWith(prefix));
+
+const needsCautionSheet = (o: Order): boolean =>
+  o.products.some(p => isCautionSandal(p.code));
+
+// --- カラー間違い防止 ---
+// 色の取り違えが起きやすい商品コード
+const COLOR_EMPHASIS_CODES = ["pet-008", "apron-001"];
+
+const needsColorEmphasis = (p: Product): boolean =>
+  COLOR_EMPHASIS_CODES.includes(p.code);
+
+// カラー名 → スウォッチ表示色マッピング
+// 視覚的に明確に区別できる色を割り当てる
+const COLOR_SWATCHES: Record<string, string> = {
+  // ライトブルー / ブルー（最も間違いやすい）
+  "ライトブルー": "#87CEEB",
+  "lblue":        "#87CEEB",
+  "ブルー":       "#2563EB",
+  "blue":         "#2563EB",
+  // ピンク
+  "ピンク":       "#F472B6",
+  "pink":         "#F472B6",
+  // グレー
+  "グレー":       "#9CA3AF",
+  "gray":         "#9CA3AF",
+  // ブラウン
+  "ブラウン":     "#92400E",
+  "brown":        "#92400E",
+  // ブラック
+  "ブラック":     "#52525B",
+  "black":        "#52525B",
+  // インディゴ（デニムエプロン用）
+  "インディゴ":   "#4338CA",
+  "indigo":       "#4338CA",
+  // ネイビー
+  "ネイビー":     "#1E3A5F",
+  "navy":         "#1E3A5F",
+  // ホワイト（暗い背景上で見えるよう薄いグレーで表現）
+  "ホワイト":     "#D1D5DB",
+  "white":        "#D1D5DB",
+};
+
+/** カラー名からスウォッチ色を取得。一致しなければ null */
+const getSwatchColor = (color: string): string | null => {
+  if (COLOR_SWATCHES[color]) return COLOR_SWATCHES[color];
+  for (const [key, val] of Object.entries(COLOR_SWATCHES)) {
+    if (color.includes(key)) return val;
+  }
+  return null;
+};
+
+// --- 水着タイプバッジ ---
+const SWIMWEAR_CODES = ["ladiesfashion-002", "ladiesfashion-010", "ladiesfashion-013"];
+const SWIMWEAR_LABELS: Record<string, string> = {
+  "ladiesfashion-002": "ビキニ・セパレート",
+  "ladiesfashion-010": "ワンピース無地 (na002)",
+  "ladiesfashion-013": "ワンピース花柄 (na004)",
+};
+const isSwimwear = (p: Product): boolean => SWIMWEAR_CODES.includes(p.code);
+
 // ━━━ SVGアイコン ━━━
 const Ic = {
   truck: (s = 24, c = "currentColor") => (
@@ -202,14 +273,15 @@ function NavButtons({ idx, total, allDone, onPrev, onNext, onComplete }: {
   );
 }
 
-function CheckButton({ done, label, onClick }: { done: boolean; label: string; onClick: () => void }) {
+function CheckButton({ done, label, onClick, disabled }: { done: boolean; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick}
-      className="w-full flex items-center justify-center gap-2.5 py-[22px] rounded text-base cursor-pointer transition-all active:scale-[0.97]"
+    <button onClick={onClick} disabled={disabled}
+      className="w-full flex items-center justify-center gap-2.5 py-[22px] rounded text-base cursor-pointer transition-all active:scale-[0.97] disabled:cursor-default"
       style={{
         border: `2px solid ${done ? S.green : S.bd}`,
         background: done ? S.green : "transparent",
         color: done ? S.black : S.white,
+        opacity: disabled ? 0.35 : 1,
         transitionTimingFunction: S.ease,
       }}>
       {done ? Ic.chk(20, "#000") : Ic.sq(20, "#fff")}
@@ -229,12 +301,52 @@ function AlertStrip({ icon, color, borderColor, children }: {
   );
 }
 
+// チェックボックス付きアラートストリップ
+function CheckStrip({ icon, color, borderColor, checked, onToggle, highlight, children }: {
+  icon: React.ReactNode; color: string; borderColor: string;
+  checked: boolean; onToggle: () => void; highlight?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm tracking-[-0.02em] text-left cursor-pointer transition-all"
+      style={{
+        background: checked ? S.s1 : S.s2,
+        borderLeft: `3px solid ${checked ? "#00fa27" : borderColor}`,
+        borderTop: "none", borderRight: "none", borderBottom: "none",
+        color: checked ? S.green : color,
+        animation: highlight ? "pulse-warn 0.6s ease" : undefined,
+      }}
+    >
+      <span className="shrink-0 transition-all" style={{ opacity: checked ? 1 : 0.7 }}>
+        {checked ? Ic.chk(18, "#00fa27") : Ic.sq(18, color)}
+      </span>
+      <span className="shrink-0">{icon}</span>
+      <span className="flex-1">{children}</span>
+    </button>
+  );
+}
+
 function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
     <div className="flex justify-between items-center px-5 py-3.5 text-sm" style={{ borderBottom: `1px solid ${S.bd}` }}>
       <span style={{ color: S.grey }}>{label}</span>
       <span style={{ color: valueColor || S.white }}>{value}</span>
     </div>
+  );
+}
+
+// 水着タイプバッジ
+function SwimwearBadge({ code }: { code: string }) {
+  const label = SWIMWEAR_LABELS[code];
+  if (!label) return null;
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-[Roboto] font-extrabold tracking-[0.04em]"
+      style={{ background: "#1e3a5f", color: "#60a5fa", border: "1px solid #2563EB44" }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -262,26 +374,28 @@ function useWebSocket(onMessage: (data: any) => void) {
 
 // ━━━ App ━━━
 export default function App() {
-  // --- 共通 state ---
   const [phase, setPhase] = useState<Phase>("home");
   const [carrier, setCarrier] = useState<Carrier>("");
   const [err, setErr] = useState("");
 
-  // --- ピッキング state ---
   const [pickItems, setPickItems] = useState<PickingItem[]>([]);
   const [pickChecks, setPickChecks] = useState<boolean[]>([]);
   const [pickIdx, setPickIdx] = useState(0);
   const [csvOk, setCsvOk] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
 
-  // --- 梱包 state ---
   const [packOrders, setPackOrders] = useState<Order[]>([]);
   const [packChecks, setPackChecks] = useState<boolean[]>([]);
   const [packIdx, setPackIdx] = useState(0);
   const [pdfOk, setPdfOk] = useState(false);
   const [pdfUploading, setPdfUploading] = useState(false);
 
-  // --- WebSocket ---
+  // 梱包サブチェック
+  const [okihaiChecks, setOkihaiChecks] = useState<boolean[]>([]);
+  const [cautionChecks, setCautionChecks] = useState<boolean[]>([]);
+  const [highlightMissing, setHighlightMissing] = useState(false);
+
+  // WebSocket
   useWebSocket(useCallback((data: any) => {
     if (data.type === "picking_loaded") {
       setCarrier(data.carrier === "sagawa" ? "sagawa" : "yamato");
@@ -293,11 +407,13 @@ export default function App() {
       setCarrier(data.carrier === "sagawa" ? "sagawa" : "yamato");
       setPackOrders(data.orders);
       setPackChecks(new Array(data.orders.length).fill(false));
+      setOkihaiChecks(new Array(data.orders.length).fill(false));
+      setCautionChecks(new Array(data.orders.length).fill(false));
       setPdfOk(true);
     }
   }, []));
 
-  // --- セッション復元 ---
+  // セッション復元
   useEffect(() => {
     fetch("/api/session").then(r => r.json()).then(s => {
       if (s.picking?.length > 0) {
@@ -309,15 +425,15 @@ export default function App() {
       if (s.packing?.length > 0) {
         setPackOrders(s.packing);
         setPackChecks(new Array(s.packing.length).fill(false));
+        setOkihaiChecks(new Array(s.packing.length).fill(false));
+        setCautionChecks(new Array(s.packing.length).fill(false));
         setPdfOk(true);
       }
     }).catch(() => {});
   }, []);
 
-  // --- スクロール ---
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [pickIdx, packIdx, phase]);
 
-  // --- CSV アップロード ---
   const handleCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !carrier) return;
@@ -332,7 +448,6 @@ export default function App() {
     setCsvUploading(false);
   };
 
-  // --- PDF アップロード ---
   const handlePDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !carrier) return;
@@ -347,32 +462,40 @@ export default function App() {
     setPdfUploading(false);
   };
 
-  // --- ピッキング チェック ---
-  // 【修正】自動遷移ロジックをここから削除。
-  // 理由: setStateは非同期バッチ処理のため、checks[i]が古い値を参照する
-  // 「stale closure」が発生していた。チェック切替のみに専念させ、
-  // 遷移は useEffect で最新のstateを監視して行う。
   const togglePick = useCallback((i: number) => {
     setPickChecks(prev => { const n = [...prev]; n[i] = !n[i]; return n; });
   }, []);
 
-  // --- 梱包 チェック ---
   const togglePack = useCallback((i: number) => {
     setPackChecks(prev => { const n = [...prev]; n[i] = !n[i]; return n; });
   }, []);
 
-  // --- 自動遷移（useEffect で最新 state を参照）---
-  // 【深掘り③】stale closure の根本対策:
-  //   useCallback 内で checks[i] を参照すると、依存配列の更新タイミングと
-  //   連打のタイミングがずれて古い値を読む。
-  //   useEffect は毎レンダリング後に最新の state で実行されるため、
-  //   「直前のチェック操作で何が変わったか」を正確に検出できる。
+  // 梱包完了ボタン: サブチェック未完了ならハイライト発火＋拒否
+  const handlePackComplete = useCallback((idx: number) => {
+    const o = packOrders[idx];
+    const okihaiOk = !o.okihai || okihaiChecks[idx];
+    const cautionOk = !needsCautionSheet(o) || cautionChecks[idx];
+    if (!okihaiOk || !cautionOk) {
+      setHighlightMissing(true);
+      setTimeout(() => setHighlightMissing(false), 700);
+      return;
+    }
+    togglePack(idx);
+  }, [packOrders, okihaiChecks, cautionChecks, togglePack]);
+
+  const toggleOkihaiCheck = useCallback((i: number) => {
+    setOkihaiChecks(prev => { const n = [...prev]; n[i] = !n[i]; return n; });
+  }, []);
+  const toggleCautionCheck = useCallback((i: number) => {
+    setCautionChecks(prev => { const n = [...prev]; n[i] = !n[i]; return n; });
+  }, []);
+
+  // 自動遷移
   const prevPickChecks = useRef<boolean[]>([]);
   useEffect(() => {
     const prev = prevPickChecks.current;
     const curr = pickChecks;
     if (prev.length !== curr.length) { prevPickChecks.current = curr; return; }
-    // 今回チェックされたインデックスを探す
     const justChecked = curr.findIndex((c, i) => c && !prev[i]);
     prevPickChecks.current = curr;
     if (justChecked < 0 || phase !== "picking") return;
@@ -398,18 +521,18 @@ export default function App() {
     }
   }, [packChecks, phase]);
 
-  // --- リセット ---
   const resetAll = () => {
     setPhase("home"); setCarrier(""); setErr("");
     setPickItems([]); setPickChecks([]); setPickIdx(0); setCsvOk(false);
     setPackOrders([]); setPackChecks([]); setPackIdx(0); setPdfOk(false);
+    setOkihaiChecks([]); setCautionChecks([]);
   };
   const goToPacking = () => {
     setPhase("home");
     setPackOrders([]); setPackChecks([]); setPackIdx(0); setPdfOk(false);
+    setOkihaiChecks([]); setCautionChecks([]);
   };
 
-  // --- 集計 ---
   const pickChecked = pickChecks.filter(Boolean).length;
   const packChecked = packChecks.filter(Boolean).length;
   const totalPickQty = pickItems.reduce((s, r) => s + r.qty, 0);
@@ -417,9 +540,6 @@ export default function App() {
   const packAllDone = packChecks.length > 0 && packChecks.every(Boolean);
   const carrierLabel = carrier === "sagawa" ? "佐川急便" : "ヤマト運輸";
 
-  // ─────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────
   return (
     <div className="max-w-[540px] mx-auto min-h-dvh flex flex-col">
 
@@ -432,15 +552,12 @@ export default function App() {
           </h1>
           <p className="text-[13px] mt-3.5 tracking-[0.02em]" style={{ color: S.grey }}>ピッキング・梱包作業支援ダッシュボード</p>
         </div>
-
         <div className="flex-1 flex flex-col gap-6 px-5 pt-9 pb-6">
           {err && (
             <div className="flex items-center gap-2.5 px-4 py-3.5 text-sm" style={{ background: S.s2, borderLeft: `3px solid ${S.red}`, color: S.red }}>
               {Ic.warn(18, "#e4250e")}{err}
             </div>
           )}
-
-          {/* 配送業者 */}
           <div className="flex gap-3">
             {(["sagawa", "yamato"] as const).map(c => (
               <button key={c} onClick={() => setCarrier(c)}
@@ -455,8 +572,6 @@ export default function App() {
               </button>
             ))}
           </div>
-
-          {/* Phase 1 ピッキング */}
           <div className="rounded overflow-hidden" style={{ background: S.s1, border: `1px solid ${S.bd}` }}>
             <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${S.bd}` }}>
               {Ic.pkg(18, "#00fa27")}
@@ -486,8 +601,6 @@ export default function App() {
               )}
             </div>
           </div>
-
-          {/* Phase 2 梱包 */}
           <div className="rounded overflow-hidden" style={{ background: S.s1, border: `1px solid ${S.bd}` }}>
             <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${S.bd}` }}>
               {Ic.clip(18, "#00fa27")}
@@ -579,13 +692,42 @@ export default function App() {
       {/* ═══════════ PACKING ═══════════ */}
       {phase === "packing" && packOrders.length > 0 && (() => {
         const o = packOrders[packIdx], done = packChecks[packIdx];
-        const attrs = (p: Product) => [p.size, p.color].filter(Boolean).join(" / ");
+        const showOkihaiCheck = !!o.okihai;
+        const showCautionCheck = needsCautionSheet(o);
+        const okihaiDone = okihaiChecks[packIdx];
+        const cautionDone = cautionChecks[packIdx];
+        const subChecksComplete =
+          (!showOkihaiCheck || okihaiDone) && (!showCautionCheck || cautionDone);
+
         return <>
           <ProgressHeader current={packIdx + 1} total={packOrders.length} checked={packChecked} carrier={carrier} onBack={() => setPhase("home")} />
           <div className="flex-1 flex flex-col gap-3 p-5">
-            {/* アラート */}
             {o.isDiffAddr && <AlertStrip icon={Ic.warn(18, "#e4250e")} color={S.red} borderColor={S.red}>注文者と届け先が異なります</AlertStrip>}
-            {o.okihai && <AlertStrip icon={Ic.pin(18, "#f5a623")} color={S.amber} borderColor={S.amber}>置き配：{o.okihai}</AlertStrip>}
+
+            {showOkihaiCheck && (
+              <CheckStrip
+                icon={Ic.pin(18, okihaiDone ? "#00fa27" : "#f5a623")}
+                color={S.amber} borderColor={S.amber}
+                checked={okihaiDone}
+                onToggle={() => toggleOkihaiCheck(packIdx)}
+                highlight={highlightMissing && !okihaiDone}
+              >
+                置き配シール貼付済み（{o.okihai}）
+              </CheckStrip>
+            )}
+
+            {showCautionCheck && (
+              <CheckStrip
+                icon={Ic.warn(18, cautionDone ? "#00fa27" : "#e4250e")}
+                color={S.red} borderColor={S.red}
+                checked={cautionDone}
+                onToggle={() => toggleCautionCheck(packIdx)}
+                highlight={highlightMissing && !cautionDone}
+              >
+                高温注意シート封入済み
+              </CheckStrip>
+            )}
+
             {o.deliveryDate && <AlertStrip icon={Ic.cal(18, "#00fa27")} color={S.green} borderColor="#00aa14">配送希望日：{o.deliveryDate}</AlertStrip>}
 
             {/* カード */}
@@ -594,7 +736,6 @@ export default function App() {
 
               <p className="font-[Roboto] text-[13px] tracking-[0.02em]" style={{ color: S.grey }}>No. {o.mgmtNo}</p>
 
-              {/* SHIP TO */}
               <p className="font-[Roboto] font-extrabold text-[11px] tracking-[0.14em] uppercase mt-5 mb-2 pb-2"
                 style={{ color: S.grey, borderBottom: `1px solid ${S.bd}` }}>SHIP TO</p>
               <p className="text-[24px] tracking-[-0.5px]">
@@ -605,22 +746,75 @@ export default function App() {
               </p>
               {o.recipientTel && <p className="text-[13px] mt-1" style={{ color: S.grey }}>TEL {o.recipientTel}</p>}
 
-              {/* ITEMS */}
               <p className="font-[Roboto] font-extrabold text-[11px] tracking-[0.14em] uppercase mt-6 mb-3 pb-2"
                 style={{ color: S.grey, borderBottom: `1px solid ${S.bd}` }}>ITEMS</p>
-              {o.products.map((p, pi) => (
-                <div key={pi} className="flex items-center gap-3 rounded p-3.5 mb-2"
-                  style={{ background: S.s2, border: `1px solid ${S.bd}` }}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[15px] leading-[1.3] tracking-[-0.02em]">
-                      {o.products.length > 1 ? `${pi + 1}. ` : ""}{p.name}
-                    </p>
-                    {attrs(p) && <p className="text-sm mt-0.5" style={{ color: S.green }}>{attrs(p)}</p>}
+
+              {o.products.map((p, pi) => {
+                // カラースウォッチが必要な商品か判定し、色を事前に確定
+                // （TypeScript の string | null エラーを回避するため変数に束縛）
+                const swColor = needsColorEmphasis(p) ? getSwatchColor(p.color) : null;
+                const plainAttrs = [p.size, p.color].filter(Boolean).join(" / ");
+
+                return (
+                  <div key={pi} className="flex flex-col rounded mb-2 overflow-hidden"
+                    style={{ background: S.s2, border: `1px solid ${S.bd}` }}>
+                    <div className="flex items-center gap-3 p-3.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[15px] leading-[1.3] tracking-[-0.02em]">
+                          {o.products.length > 1 ? `${pi + 1}. ` : ""}{p.name}
+                        </p>
+
+                        {/* 水着タイプバッジ */}
+                        {isSwimwear(p) && (
+                          <div className="mt-1.5"><SwimwearBadge code={p.code} /></div>
+                        )}
+
+                        {/* カラー強調表示（スウォッチ付き） or 通常の属性表示 */}
+                        {swColor ? (
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <span
+                              className="inline-block w-[18px] h-[18px] rounded-full shrink-0"
+                              style={{
+                                background: swColor,
+                                border: "2px solid rgba(255,255,255,0.3)",
+                                boxShadow: `0 0 8px ${swColor}66`,
+                              }}
+                            />
+                            <p className="text-[18px] tracking-[-0.3px] font-[Roboto] font-extrabold"
+                              style={{ color: swColor }}>
+                              {p.color}
+                            </p>
+                            {p.size && (
+                              <p className="text-sm ml-1" style={{ color: S.green }}>{p.size}</p>
+                            )}
+                          </div>
+                        ) : (
+                          plainAttrs && <p className="text-sm mt-0.5" style={{ color: S.green }}>{plainAttrs}</p>
+                        )}
+                      </div>
+                      <p className="font-[Roboto] font-black text-[24px] tracking-[-0.5px] shrink-0"
+                        style={{ color: p.qty >= 2 ? S.green : S.white }}>×{p.qty}</p>
+                    </div>
+
+                    {/* カラー確認バー（色帯） */}
+                    {swColor && (
+                      <div className="px-3.5 py-2 flex items-center gap-2 text-[13px]"
+                        style={{
+                          background: `${swColor}18`,
+                          borderTop: `1px solid ${swColor}44`,
+                        }}>
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ background: swColor }}
+                        />
+                        <span style={{ color: swColor }}>
+                          カラー確認：{p.color}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <p className="font-[Roboto] font-black text-[24px] tracking-[-0.5px] shrink-0"
-                    style={{ color: p.qty >= 2 ? S.green : S.white }}>×{p.qty}</p>
-                </div>
-              ))}
+                );
+              })}
 
               <div className="text-center text-[15px] mt-3 py-2.5 rounded" style={{ border: `1px solid ${S.bd}` }}>
                 商品合計 <span className="font-[Roboto] font-black text-xl tracking-[-0.3px]">{o.totalItems}</span> 点
@@ -628,7 +822,12 @@ export default function App() {
             </div>
           </div>
           <div className="px-5 pb-6">
-            <CheckButton done={done} label="梱包完了" onClick={() => togglePack(packIdx)} />
+            <CheckButton
+              done={done}
+              label={!subChecksComplete ? "先にチェック項目を完了してください" : "梱包完了"}
+              onClick={() => handlePackComplete(packIdx)}
+              disabled={!subChecksComplete && !done}
+            />
             <NavButtons idx={packIdx} total={packOrders.length} allDone={packAllDone}
               onPrev={() => setPackIdx(i => i - 1)} onNext={() => setPackIdx(i => i + 1)} onComplete={() => setPhase("packingSummary")} />
           </div>

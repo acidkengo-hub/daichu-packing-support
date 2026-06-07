@@ -1,6 +1,5 @@
 /* src/index.css */
 
-/* @import は他のすべての文より先に記述する必要がある（CSS仕様） */
 @import url("https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@700&family=Roboto:wght@700;800;900&display=swap");
 @import "tailwindcss";
 
@@ -29,4 +28,12 @@ body {
   font-weight: 700;
   background: var(--black);
   color: var(--white);
+}
+
+/* サブチェック未完了時のパルスアニメーション */
+@keyframes pulse-warn {
+  0% { background-color: var(--s2); }
+  25% { background-color: #3a1510; }
+  50% { background-color: #2a100c; }
+  100% { background-color: var(--s2); }
 }

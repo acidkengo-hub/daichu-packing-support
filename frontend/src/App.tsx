@@ -1,41 +1,9 @@
 // src/App.tsx
 import { useState, useEffect, useCallback, useRef } from "react";
+import { parsePickingCSV, parseOrderFile } from "./parsers";
+import type { PickingItem, Product, Order } from "./parsers";
 
-// ━━━ 型定義 ━━━
-type PickingItem = {
-  id: number;
-  code: string;
-  qty: number;
-  name: string;
-  attr1: string;
-  attr2: string;
-  tana: string;
-};
-
-type Product = {
-  code: string;
-  name: string;
-  size: string;
-  color: string;
-  qty: number;
-};
-
-type Order = {
-  mgmtNo: string;
-  shopName: string;
-  carrier: string;
-  recipientName: string;
-  recipientPostal: string;
-  recipientAddr: string;
-  recipientTel: string;
-  ordererName: string;
-  isDiffAddr: boolean;
-  deliveryDate: string;
-  okihai: string;
-  products: Product[];
-  totalItems: number;
-};
-
+// ━━━ 型定義（App固有のもののみ） ━━━
 type Phase = "home" | "picking" | "pickingSummary" | "packing" | "packingSummary";
 type Carrier = "" | "sagawa" | "yamato";
 
@@ -350,27 +318,6 @@ function SwimwearBadge({ code }: { code: string }) {
   );
 }
 
-// ━━━ WebSocket ━━━
-function useWebSocket(onMessage: (data: any) => void) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const cbRef = useRef(onMessage);
-  cbRef.current = onMessage;
-
-  useEffect(() => {
-    function connect() {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
-      ws.onopen = () => console.log("[WS] 接続完了");
-      ws.onmessage = (e) => {
-        try { cbRef.current(JSON.parse(e.data)); } catch {}
-      };
-      ws.onclose = () => { setTimeout(connect, 3000); };
-      wsRef.current = ws;
-    }
-    connect();
-    return () => { wsRef.current?.close(); };
-  }, []);
-}
 
 // ━━━ App ━━━
 export default function App() {
@@ -395,70 +342,47 @@ export default function App() {
   const [cautionChecks, setCautionChecks] = useState<boolean[]>([]);
   const [highlightMissing, setHighlightMissing] = useState(false);
 
-  // WebSocket
-  useWebSocket(useCallback((data: any) => {
-    if (data.type === "picking_loaded") {
-      setCarrier(data.carrier === "sagawa" ? "sagawa" : "yamato");
-      setPickItems(data.items);
-      setPickChecks(new Array(data.items.length).fill(false));
-      setCsvOk(true);
-    }
-    if (data.type === "packing_loaded") {
-      setCarrier(data.carrier === "sagawa" ? "sagawa" : "yamato");
-      setPackOrders(data.orders);
-      setPackChecks(new Array(data.orders.length).fill(false));
-      setOkihaiChecks(new Array(data.orders.length).fill(false));
-      setCautionChecks(new Array(data.orders.length).fill(false));
-      setPdfOk(true);
-    }
-  }, []));
-
-  // セッション復元
-  useEffect(() => {
-    fetch("/api/session").then(r => r.json()).then(s => {
-      if (s.picking?.length > 0) {
-        setCarrier(s.carrier === "sagawa" ? "sagawa" : "yamato");
-        setPickItems(s.picking);
-        setPickChecks(new Array(s.picking.length).fill(false));
-        setCsvOk(true);
-      }
-      if (s.packing?.length > 0) {
-        setPackOrders(s.packing);
-        setPackChecks(new Array(s.packing.length).fill(false));
-        setOkihaiChecks(new Array(s.packing.length).fill(false));
-        setCautionChecks(new Array(s.packing.length).fill(false));
-        setPdfOk(true);
-      }
-    }).catch(() => {});
-  }, []);
-
   useEffect(() => { window.scrollTo({ top: 0, behavior: "instant" }); }, [pickIdx, packIdx, phase]);
 
+// --- CSV アップロード（クライアントサイド解析） ---
   const handleCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !carrier) return;
     setErr(""); setCsvUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`/api/upload/csv?carrier=${carrier}`, { method: "POST", body: form });
-      const json = await res.json();
-      if (!json.success) setErr(json.error || "アップロード失敗");
-    } catch (ex: any) { setErr("通信エラー: " + ex.message); }
+      const items = await parsePickingCSV(file);
+      if (items.length === 0) {
+        setErr("CSVにデータがありません");
+      } else {
+        setPickItems(items);
+        setPickChecks(new Array(items.length).fill(false));
+        setCsvOk(true);
+      }
+    } catch (ex: unknown) {
+      setErr("CSV解析エラー: " + (ex instanceof Error ? ex.message : String(ex)));
+    }
     setCsvUploading(false);
   };
 
+  // --- PDF アップロード（クライアントサイド解析） ---
   const handlePDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !carrier) return;
     setErr(""); setPdfUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`/api/upload/pdf?carrier=${carrier}`, { method: "POST", body: form });
-      const json = await res.json();
-      if (!json.success) setErr(json.error || "アップロード失敗");
-    } catch (ex: any) { setErr("通信エラー: " + ex.message); }
+      const orders = await parseOrderFile(file);
+      if (orders.length === 0) {
+        setErr("受注データが見つかりません");
+      } else {
+        setPackOrders(orders);
+        setPackChecks(new Array(orders.length).fill(false));
+        setOkihaiChecks(new Array(orders.length).fill(false));
+        setCautionChecks(new Array(orders.length).fill(false));
+        setPdfOk(true);
+      }
+    } catch (ex: unknown) {
+      setErr("PDF解析エラー: " + (ex instanceof Error ? ex.message : String(ex)));
+    }
     setPdfUploading(false);
   };
 

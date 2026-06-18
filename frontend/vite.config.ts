@@ -8,13 +8,5 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-        ws: true,           // ← これを追加（/api/ws もプロキシ対象になる）
-      },
-      // "/ws" のプロキシは削除
-    },
   },
 });

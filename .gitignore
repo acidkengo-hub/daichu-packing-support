@@ -20,3 +20,5 @@ Thumbs.db
 
 # Uploads (個人情報を含むCSV/PDF)
 backend/uploads/
+
+public/cmaps/

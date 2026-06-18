@@ -277,7 +277,7 @@ function CheckStrip({ icon, color, borderColor, checked, onToggle, highlight, ch
   return (
     <button
       onClick={onToggle}
-      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm tracking-[-0.02em] text-left cursor-pointer transition-all"
+      className="w-full flex items-center gap-3 px-4 py-4 text-[15px] tracking-[-0.02em] text-left cursor-pointer transition-all min-h-[56px]"
       style={{
         background: checked ? S.s1 : S.s2,
         borderLeft: `3px solid ${checked ? "#00fa27" : borderColor}`,
@@ -286,8 +286,9 @@ function CheckStrip({ icon, color, borderColor, checked, onToggle, highlight, ch
         animation: highlight ? "pulse-warn 0.6s ease" : undefined,
       }}
     >
-      <span className="shrink-0 transition-all" style={{ opacity: checked ? 1 : 0.7 }}>
-        {checked ? Ic.chk(18, "#00fa27") : Ic.sq(18, color)}
+      <span className="shrink-0 flex items-center justify-center w-[32px] h-[32px] transition-all"
+        style={{ opacity: checked ? 1 : 0.7 }}>
+        {checked ? Ic.chk(24, "#00fa27") : Ic.sq(24, color)}
       </span>
       <span className="shrink-0">{icon}</span>
       <span className="flex-1">{children}</span>
@@ -465,7 +466,7 @@ export default function App() {
   const carrierLabel = carrier === "sagawa" ? "佐川急便" : "ヤマト運輸";
 
   return (
-    <div className="max-w-[540px] mx-auto min-h-dvh flex flex-col">
+    <div className="max-w-[780px] mx-auto min-h-dvh flex flex-col">
 
       {/* ═══════════ HOME ═══════════ */}
       {phase === "home" && <>

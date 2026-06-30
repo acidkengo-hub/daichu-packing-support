@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { parseOrderCSV } from "./parsers";
 import type { PickingItem, Product, Order, ParsedData, CarrierData } from "./parsers";
+import { getProductUrl, getProductUrlForPicking } from "./productLinks";
 
 // ━━━ App固有の型 ━━━
 type Phase = "home" | "picking" | "pickingSummary" | "packing" | "packingSummary";
@@ -79,6 +80,7 @@ const Ic = {
   cal: (s=24,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   file: (s=24,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
   trophy: (s=24,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18"/><path d="M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22h10c0-2-.85-3.25-2.03-3.79A1.07 1.07 0 0114 17v-2.34"/><path d="M18 2H6v7a6 6 0 1012 0V2z"/></svg>,
+  link: (s=24,c="currentColor") => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>,
 };
 
 // ━━━ 共通スタイル ━━━
@@ -129,6 +131,7 @@ export default function App() {
   const [okihaiChecks, setOkihaiChecks] = useState<boolean[]>(saved.current?.okihaiChecks ?? []);
   const [cautionChecks, setCautionChecks] = useState<boolean[]>(saved.current?.cautionChecks ?? []);
   const [highlightMissing, setHighlightMissing] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
 
   useEffect(() => { if(!parsedData) return; saveState({parsedData,carrier,phase,pickIdx,packIdx,pickChecks,packChecks,okihaiChecks,cautionChecks}); }, [parsedData,carrier,phase,pickIdx,packIdx,pickChecks,packChecks,okihaiChecks,cautionChecks]);
   useEffect(() => { window.scrollTo({top:0,behavior:"instant"}); }, [pickIdx,packIdx,phase]);
@@ -225,7 +228,16 @@ export default function App() {
           <ProgressHeader current={pickIdx+1} total={pickItems.length} checked={pickChecked} carrier={carrier} onBack={goToHome}/>
           <div className="flex-1 flex flex-col gap-4 p-5">
             <div className="flex flex-col justify-center rounded min-h-[280px] p-7 transition-all duration-300" style={{background:S.s1,border:`2px solid ${done?S.green:S.bd}`,transitionTimingFunction:S.ease}}>
-              <p className="font-[Roboto] font-black text-[28px] tracking-[-0.5px]" style={{color:S.green}}>{it.code}</p>
+              {/* 商品コード + 商品リンク */}
+              <div className="flex items-center gap-2">
+                <p className="font-[Roboto] font-black text-[28px] tracking-[-0.5px]" style={{color:S.green}}>{it.code}</p>
+                <a href={getProductUrlForPicking(it.code, it.name)} target="_blank" rel="noopener noreferrer"
+                  className="shrink-0 p-1.5 rounded transition-all active:scale-90"
+                  style={{background:S.s2, border:`1px solid ${S.bd}`}}
+                  onClick={(e) => e.stopPropagation()}>
+                  {Ic.link(18, "#7e8085")}
+                </a>
+              </div>
               <p className="text-[15px] leading-[1.3] mt-1.5" style={{color:S.dim}}>{it.name}</p>
               <div className="flex flex-col gap-1 mt-5">
                 {it.attr1 && <p className="text-[22px] tracking-[-0.3px]">{it.attr1}</p>}
@@ -294,11 +306,23 @@ export default function App() {
                 const swColor=colorAttr?getSwatchColor(colorAttr):null;
                 const sizeAttr=swColor?(colorAttr===p.attr1?p.attr2:p.attr1):null;
                 const plainAttrs=[p.attr1,p.attr2].filter(Boolean).join(" / ");
+                const productUrl = getProductUrl(p.code, o.shopName, p.name);
                 return (
                   <div key={pi} className="flex flex-col rounded mb-2 overflow-hidden" style={{background:S.s2,border:`1px solid ${S.bd}`}}>
                     <div className="flex items-center gap-3 p-3.5">
                       <div className="flex-1 min-w-0">
-                        <p className="font-[Roboto] font-black text-[20px] tracking-[-0.3px]" style={{color:S.green}}>{o.products.length>1?`${pi+1}. `:""}{p.code}</p>
+                        {/* 商品コード + 商品リンク */}
+                        <div className="flex items-center gap-2">
+                          <p className="font-[Roboto] font-black text-[20px] tracking-[-0.3px]" style={{color:S.green}}>{o.products.length>1?`${pi+1}. `:""}{p.code}</p>
+                          {productUrl && (
+                            <a href={productUrl} target="_blank" rel="noopener noreferrer"
+                              className="shrink-0 p-1 rounded transition-all active:scale-90"
+                              style={{background:S.s1, border:`1px solid ${S.bd}`}}
+                              onClick={(e) => e.stopPropagation()}>
+                              {Ic.link(16, "#7e8085")}
+                            </a>
+                          )}
+                        </div>
                         <p className="text-[14px] leading-[1.3] mt-0.5" style={{color:S.dim}}>{p.name}</p>
                         {isSwimwear(p) && <div className="mt-1.5"><SwimwearBadge code={p.code}/></div>}
                         {swColor&&colorAttr ? (
@@ -346,6 +370,31 @@ export default function App() {
           <div className="mt-auto pt-7 flex flex-col gap-3">
             <button onClick={goToHome} className="w-full flex items-center justify-center gap-2 py-5 rounded text-[15px] cursor-pointer transition-all active:scale-[0.97]" style={{background:S.green,color:S.black}}>次の配送業者へ{Ic.aR(18,"#000")}</button>
             <button onClick={resetAll} className="w-full flex items-center justify-center gap-1.5 py-[18px] rounded text-[15px] cursor-pointer transition-all active:scale-[0.97]" style={{background:S.s2,border:`1px solid ${S.bd}`}}>作業終了（データクリア）</button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ 商品一覧フローティングボタン + オーバーレイ ═══════════ */}
+      <button onClick={() => setShowCatalog(true)}
+        className="fixed bottom-6 right-6 w-[56px] h-[56px] rounded-full flex items-center justify-center cursor-pointer transition-all active:scale-90 z-40 shadow-lg"
+        style={{ background: S.s2, border: `2px solid ${S.bd}` }}>
+        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#7e8085" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+          <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+        </svg>
+      </button>
+
+      {showCatalog && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "rgba(0,0,0,0.95)" }}
+          onClick={() => setShowCatalog(false)}>
+          <div className="flex items-center justify-between px-5 py-4 shrink-0">
+            <p className="text-[15px]" style={{ color: S.green }}>商品一覧（タップで閉じる）</p>
+            <button onClick={() => setShowCatalog(false)}
+              className="text-[28px] leading-none cursor-pointer bg-transparent border-none" style={{ color: S.grey }}>✕</button>
+          </div>
+          <div className="flex-1 overflow-auto p-2" onClick={(e) => e.stopPropagation()}>
+            <img src="/product-catalog.png" alt="商品一覧" className="w-full h-auto"
+              style={{ maxWidth: "100%", touchAction: "pinch-zoom" }} />
           </div>
         </div>
       )}

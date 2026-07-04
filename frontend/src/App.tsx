@@ -5,7 +5,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 import { useState, useEffect, useCallback, useRef } from "react";
 import { parseOrderCSV } from "./parsers";
-import type { PickingItem, Product, Order, ParsedData, CarrierData } from "./parsers";
+import type { Product, Order, ParsedData, CarrierData } from "./parsers";
 import { getProductUrl, getProductUrlForPicking } from "./productLinks";
 
 // ━━━ App固有の型 ━━━

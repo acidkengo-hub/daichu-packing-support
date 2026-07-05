@@ -173,6 +173,34 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
   }
 
   // --- Step 3: ピッキングデータ集約 ---
+
+  /** サイズ文字列からソート用の数値を抽出 */
+  function extractSizeOrder(attr: string): number {
+    const s = attr.trim().toUpperCase();
+    // 標準サイズ表記
+    if (s.startsWith("XS")) return 10;
+    if (/^S([(\s]|$)/.test(s)) return 20;
+    if (/^M([(\s]|$)/.test(s)) return 30;
+    if (/^L([(\s]|$)/.test(s)) return 40;
+    if (s.startsWith("XL")) return 50;
+    if (s.startsWith("XXL") || s.startsWith("2XL")) return 60;
+    if (s.startsWith("3XL")) return 70;
+    if (attr.includes("フリー")) return 35;
+    // 数値抽出（"23.5cm(36-37)" → 23.5, "3段" → 3）
+    const numMatch = attr.match(/(\d+\.?\d*)/);
+    if (numMatch) return parseFloat(numMatch[1]);
+    return 999;
+  }
+
+  /** PickingItem のサイズソートキーを返す（attr1, attr2 の両方を試行） */
+  function getItemSizeOrder(item: PickingItem): number {
+    const o1 = extractSizeOrder(item.attr1);
+    const o2 = extractSizeOrder(item.attr2);
+    if (o1 < 999) return o1;
+    if (o2 < 999) return o2;
+    return 999;
+  }
+
   function buildPickingItems(orders: Order[]): PickingItem[] {
     const merged = new Map<string, PickingItem>();
 
@@ -208,10 +236,24 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
       }
     }
 
-    let id = 0;
-    const items: PickingItem[] = [];
-    for (const item of merged.values()) {
-      items.push({ ...item, id: id++ });
+    // ソート済みリストを構築
+    const items = [...merged.values()];
+    items.sort((a, b) => {
+      // 1. mercari- コードは最後尾
+      const aM = a.code.startsWith("mercari-");
+      const bM = b.code.startsWith("mercari-");
+      if (aM !== bM) return aM ? 1 : -1;
+
+      // 2. 商品コード順（同じ商品がグループ化される）
+      if (a.code !== b.code) return a.code.localeCompare(b.code, "ja");
+
+      // 3. 同一コード内はサイズ小→大
+      return getItemSizeOrder(a) - getItemSizeOrder(b);
+    });
+
+    // ID採番
+    for (let i = 0; i < items.length; i++) {
+      items[i].id = i;
     }
     return items;
   }

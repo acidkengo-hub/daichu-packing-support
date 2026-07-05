@@ -226,6 +226,23 @@ export default function App() {
         const it=pickItems[pickIdx], done=pickChecks[pickIdx];
         return <>
           <ProgressHeader current={pickIdx+1} total={pickItems.length} checked={pickChecked} carrier={carrier} onBack={goToHome}/>
+
+          {/* グループヘッダー */}
+          {(() => {
+            const groupItems = pickItems.filter(p => p.code === it.code);
+            const groupPos = groupItems.findIndex(p => p.id === it.id) + 1;
+            const prevItem = pickIdx > 0 ? pickItems[pickIdx - 1] : null;
+            const isNewGroup = !prevItem || prevItem.code !== it.code;
+            return (
+              <div className="mx-5 mt-3 flex items-center gap-3 px-5 py-4 rounded"
+                style={{ background: isNewGroup ? "rgba(0,250,39,0.12)" : S.s2, border: `1px solid ${isNewGroup ? "rgba(0,250,39,0.3)" : S.bd}` }}>
+                <p className="font-[Roboto] font-black text-[20px] tracking-[-0.3px]" style={{ color: S.green }}>{it.code}</p>
+                <p className="font-[Roboto] font-extrabold text-[16px]" style={{ color: S.grey }}>{groupPos} / {groupItems.length}</p>
+                <p className="flex-1 text-right text-[13px] truncate" style={{ color: S.grey }}>{it.name.substring(0, 25)}</p>
+              </div>
+            );
+          })()}
+
           <div className="flex-1 flex flex-col gap-4 p-5">
             <div className="flex flex-col justify-center rounded min-h-[280px] p-7 transition-all duration-300" style={{background:S.s1,border:`2px solid ${done?S.green:S.bd}`,transitionTimingFunction:S.ease}}>
               {/* 商品コード + 商品リンク */}

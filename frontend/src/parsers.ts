@@ -49,6 +49,7 @@ export type CarrierData = {
 export type ParsedData = {
   sagawa: CarrierData;
   yamato: CarrierData;
+  yamatoHarai: CarrierData;
 };
 
 // ━━━ 定数 ━━━
@@ -91,15 +92,17 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
   // --- Step 2: 配送便で分割し、注文データを構築 ---
   const sagawaOrders: Order[] = [];
   const yamatoOrders: Order[] = [];
+  const yamatoHaraiOrders: Order[] = [];
 
   for (const [mgmtNo, rows] of orderMap) {
     const r0 = rows[0];
     const carrierName = r0["配送便名"] || "";
 
     const isSagawa = carrierName.includes("佐川") || carrierName.includes("飛脚");
-    const isYamato = carrierName.includes("ネコポス");
+    const isYamatoHarai = carrierName.includes("発払い");
+    const isYamato = !isYamatoHarai && (carrierName.includes("ネコポス") || carrierName.includes("ヤマト"));
 
-    if (!isSagawa && !isYamato) {
+    if (!isSagawa && !isYamato && !isYamatoHarai) {
       console.warn(`[CSV] 不明な配送便: "${carrierName}" (管理番号:${mgmtNo})`);
       continue;
     }
@@ -167,40 +170,14 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
 
     if (isSagawa) {
       sagawaOrders.push(order);
+    } else if (isYamatoHarai) {
+      yamatoHaraiOrders.push(order);
     } else {
       yamatoOrders.push(order);
     }
   }
 
   // --- Step 3: ピッキングデータ集約 ---
-
-  /** サイズ文字列からソート用の数値を抽出 */
-  function extractSizeOrder(attr: string): number {
-    const s = attr.trim().toUpperCase();
-    // 標準サイズ表記
-    if (s.startsWith("XS")) return 10;
-    if (/^S([(\s]|$)/.test(s)) return 20;
-    if (/^M([(\s]|$)/.test(s)) return 30;
-    if (/^L([(\s]|$)/.test(s)) return 40;
-    if (s.startsWith("XL")) return 50;
-    if (s.startsWith("XXL") || s.startsWith("2XL")) return 60;
-    if (s.startsWith("3XL")) return 70;
-    if (attr.includes("フリー")) return 35;
-    // 数値抽出（"23.5cm(36-37)" → 23.5, "3段" → 3）
-    const numMatch = attr.match(/(\d+\.?\d*)/);
-    if (numMatch) return parseFloat(numMatch[1]);
-    return 999;
-  }
-
-  /** PickingItem のサイズソートキーを返す（attr1, attr2 の両方を試行） */
-  function getItemSizeOrder(item: PickingItem): number {
-    const o1 = extractSizeOrder(item.attr1);
-    const o2 = extractSizeOrder(item.attr2);
-    if (o1 < 999) return o1;
-    if (o2 < 999) return o2;
-    return 999;
-  }
-
   function buildPickingItems(orders: Order[]): PickingItem[] {
     const merged = new Map<string, PickingItem>();
 
@@ -236,34 +213,22 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
       }
     }
 
-    // ソート済みリストを構築
-    const items = [...merged.values()];
-    items.sort((a, b) => {
-      // 1. mercari- コードは最後尾
-      const aM = a.code.startsWith("mercari-");
-      const bM = b.code.startsWith("mercari-");
-      if (aM !== bM) return aM ? 1 : -1;
-
-      // 2. 商品コード順（同じ商品がグループ化される）
-      if (a.code !== b.code) return a.code.localeCompare(b.code, "ja");
-
-      // 3. 同一コード内はサイズ小→大
-      return getItemSizeOrder(a) - getItemSizeOrder(b);
-    });
-
-    // ID採番
-    for (let i = 0; i < items.length; i++) {
-      items[i].id = i;
+    let id = 0;
+    const items: PickingItem[] = [];
+    for (const item of merged.values()) {
+      items.push({ ...item, id: id++ });
     }
     return items;
   }
 
   const sagawaPicking = buildPickingItems(sagawaOrders);
   const yamatoPicking = buildPickingItems(yamatoOrders);
+  const yamatoHaraiPicking = buildPickingItems(yamatoHaraiOrders);
 
   console.log(
     `[CSV] 解析完了: 佐川 ${sagawaOrders.length}件(${sagawaPicking.length}種), ` +
-      `ヤマト ${yamatoOrders.length}件(${yamatoPicking.length}種)`
+      `ヤマト ${yamatoOrders.length}件(${yamatoPicking.length}種), ` +
+      `ヤマト発払い ${yamatoHaraiOrders.length}件(${yamatoHaraiPicking.length}種)`
   );
 
   return {
@@ -276,6 +241,11 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
       orders: yamatoOrders,
       pickingItems: yamatoPicking,
       totalPickingQty: yamatoPicking.reduce((s, i) => s + i.qty, 0),
+    },
+    yamatoHarai: {
+      orders: yamatoHaraiOrders,
+      pickingItems: yamatoHaraiPicking,
+      totalPickingQty: yamatoHaraiPicking.reduce((s, i) => s + i.qty, 0),
     },
   };
 }

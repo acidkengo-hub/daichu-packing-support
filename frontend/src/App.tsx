@@ -5,7 +5,7 @@ import type { PickingItem, Product, Order, ParsedData, CarrierData } from "./par
 import { getProductUrl, getProductUrlForPicking } from "./productLinks";
 
 type Phase = "home" | "picking" | "pickingSummary" | "packing" | "packingSummary";
-type Carrier = "" | "sagawa" | "yamato" | "all";
+type Carrier = "" | "sagawa" | "yamato" | "yamatoHarai" | "all";
 type PickView = "card" | "list" | "group";
 
 // ━━━ localStorage ━━━
@@ -17,11 +17,22 @@ type SavedState = {
   okihaiChecks: boolean[]; cautionChecks: boolean[]; flyerChecks: boolean[];
 };
 function saveState(s: SavedState) { try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch {} }
-function loadState(): SavedState | null { try { const r = localStorage.getItem(LS_KEY); return r ? JSON.parse(r) as SavedState : null; } catch { return null; } }
+function loadState(): SavedState | null {
+  try {
+    const r = localStorage.getItem(LS_KEY);
+    if (!r) return null;
+    const s = JSON.parse(r) as SavedState;
+    // 旧バージョンのデータ互換: yamatoHarai がなければ空で補完
+    if (s.parsedData && !s.parsedData.yamatoHarai) {
+      s.parsedData.yamatoHarai = { orders: [], pickingItems: [], totalPickingQty: 0 };
+    }
+    return s;
+  } catch { return null; }
+}
 function clearState() { try { localStorage.removeItem(LS_KEY); } catch {} }
 
 // ━━━ 梱包チェック ━━━
-const CAUTION_PREFIXES = ["sandal-004", "sandal-007", "sandal-008"];
+const CAUTION_PREFIXES = ["sandal-004", "sandal-007", "sandal-008", "m-sandal-"];
 const needsCautionSheet = (o: Order): boolean => o.products.some(p => CAUTION_PREFIXES.some(pre => p.code.startsWith(pre)));
 const COLOR_EMPHASIS_CODES = ["pet-008", "apron-001"];
 const needsColorEmphasis = (p: Product): boolean => COLOR_EMPHASIS_CODES.includes(p.code);
@@ -52,7 +63,7 @@ function saveCampaign(s: CampaignSettings) { try { localStorage.setItem(CAMPAIGN
 
 function buildAllPickingItems(data: ParsedData): PickingItem[] {
   const merged = new Map<string, PickingItem>();
-  for (const item of [...data.sagawa.pickingItems, ...data.yamato.pickingItems]) {
+  for (const item of [...data.sagawa.pickingItems, ...data.yamato.pickingItems, ...data.yamatoHarai.pickingItems]) {
     const key = `${item.code}|${item.attr1}|${item.attr2}`;
     const ex = merged.get(key);
     if (ex) { ex.qty += item.qty; } else { merged.set(key, { ...item }); }
@@ -89,8 +100,8 @@ const S={green:"var(--green)",black:"var(--black)",white:"var(--white)",grey:"va
 
 // ━━━ 小コンポーネント ━━━
 function ProgressHeader({current,total,checked,carrier,onBack}:{current:number;total:number;checked:number;carrier:Carrier;onBack:()=>void}){
-  const label=carrier==="sagawa"?"佐川急便":carrier==="yamato"?"ヤマト運輸":"全商品一括";
-  const bg=carrier==="sagawa"?S.green:carrier==="yamato"?S.white:"#a78bfa";
+  const label=carrier==="sagawa"?"佐川急便":carrier==="yamato"?"ヤマト運輸":carrier==="yamatoHarai"?"ヤマト発払い":"全商品一括";
+  const bg=carrier==="sagawa"?S.green:carrier==="yamato"?S.white:carrier==="yamatoHarai"?"#f97316":"#a78bfa";
   return<div className="flex flex-col gap-3.5 px-5 pt-4"><div className="flex items-center justify-between"><p className="font-[Roboto] font-extrabold text-[13px] tracking-[0.04em]" style={{color:S.grey}}><span className="text-[22px] tracking-[-0.5px]" style={{color:S.white}}>{current}</span>{" / "}{total}<span className="ml-2" style={{color:S.green}}>({checked})</span></p><span className="font-[Roboto] font-extrabold text-[11px] tracking-[0.08em] uppercase px-3.5 py-[5px] rounded-full" style={{background:bg,color:S.black}}>{label}</span><button onClick={onBack} className="flex items-center gap-1 text-xs cursor-pointer bg-transparent border-none" style={{color:S.grey}}>{Ic.aL(14,"#7e8085")}戻る</button></div><div className="h-[3px] overflow-hidden" style={{background:S.s3}}><div className="h-full transition-[width] duration-400" style={{background:S.green,width:`${(checked/total)*100}%`,transitionTimingFunction:S.ease}}/></div></div>;
 }
 function NavButtons({idx,total,allDone,onPrev,onNext,onComplete}:{idx:number;total:number;allDone:boolean;onPrev:()=>void;onNext:()=>void;onComplete:()=>void}){
@@ -131,7 +142,7 @@ export default function App(){
   const [phase,setPhase]=useState<Phase>(saved.current?.phase??"home");
   const [carrier,setCarrier]=useState<Carrier>(saved.current?.carrier??"");
   const [err,setErr]=useState("");const [uploading,setUploading]=useState(false);
-  const cd:CarrierData|null=parsedData?carrier==="sagawa"?parsedData.sagawa:carrier==="yamato"?parsedData.yamato:null:null;
+  const cd:CarrierData|null=parsedData?carrier==="sagawa"?parsedData.sagawa:carrier==="yamato"?parsedData.yamato:carrier==="yamatoHarai"?parsedData.yamatoHarai:null:null;
   const pickItems=carrier==="all"&&parsedData?buildAllPickingItems(parsedData):cd?.pickingItems??[];
   const packOrders=cd?.orders??[];
   const [pickIdx,setPickIdx]=useState(saved.current?.pickIdx??0);
@@ -152,7 +163,7 @@ export default function App(){
   useEffect(()=>{window.scrollTo({top:0,behavior:"instant"});},[pickIdx,packIdx,phase]);
 
   const handleCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{const file=e.target.files?.[0];if(!file)return;setErr("");setUploading(true);try{const data=await parseOrderCSV(file);if(data.sagawa.orders.length+data.yamato.orders.length===0){setErr("注文データが見つかりません");}else{setParsedData(data);setCarrier("");setPhase("home");}}catch(ex:unknown){setErr("CSV解析エラー: "+(ex instanceof Error?ex.message:String(ex)));}setUploading(false);};
-  const startPhase=(c:Carrier,tp:"picking"|"packing")=>{if(!parsedData||c==="")return;setCarrier(c);setPickIdx(0);setPackIdx(0);setPickViewMode("card");setGroupIdx(0);if(c==="all"){const all=buildAllPickingItems(parsedData);setPickChecks(new Array(all.length).fill(false));setPackChecks([]);setOkihaiChecks([]);setCautionChecks([]);setFlyerChecks([]);}else{const d=c==="sagawa"?parsedData.sagawa:parsedData.yamato;setPickChecks(new Array(d.pickingItems.length).fill(false));setPackChecks(new Array(d.orders.length).fill(false));setOkihaiChecks(new Array(d.orders.length).fill(false));setCautionChecks(new Array(d.orders.length).fill(false));setFlyerChecks(new Array(d.orders.length).fill(false));}setPhase(tp);};
+  const startPhase=(c:Carrier,tp:"picking"|"packing")=>{if(!parsedData||c==="")return;setCarrier(c);setPickIdx(0);setPackIdx(0);setPickViewMode("card");setGroupIdx(0);if(c==="all"){const all=buildAllPickingItems(parsedData);setPickChecks(new Array(all.length).fill(false));setPackChecks([]);setOkihaiChecks([]);setCautionChecks([]);setFlyerChecks([]);}else{const d=c==="sagawa"?parsedData.sagawa:c==="yamatoHarai"?parsedData.yamatoHarai:parsedData.yamato;setPickChecks(new Array(d.pickingItems.length).fill(false));setPackChecks(new Array(d.orders.length).fill(false));setOkihaiChecks(new Array(d.orders.length).fill(false));setCautionChecks(new Array(d.orders.length).fill(false));setFlyerChecks(new Array(d.orders.length).fill(false));}setPhase(tp);};
   const togglePick=useCallback((i:number)=>{setPickChecks(p=>{const n=[...p];n[i]=!n[i];return n;});},[]);
   const togglePack=useCallback((i:number)=>{setPackChecks(p=>{const n=[...p];n[i]=!n[i];return n;});},[]);
   const toggleOkihaiCheck=useCallback((i:number)=>{setOkihaiChecks(p=>{const n=[...p];n[i]=!n[i];return n;});},[]);
@@ -160,6 +171,7 @@ export default function App(){
   const toggleFlyerCheck=useCallback((i:number)=>{setFlyerChecks(p=>{const n=[...p];n[i]=!n[i];return n;});},[]);
   const handlePackComplete=useCallback((idx:number)=>{const o=packOrders[idx];const ok1=!o.okihai||okihaiChecks[idx];const ok2=!needsCautionSheet(o)||cautionChecks[idx];const sk=getStoreKey(o.shopName);const ok3=!campaign[sk]||flyerChecks[idx];if(!ok1||!ok2||!ok3){setHighlightMissing(true);setTimeout(()=>setHighlightMissing(false),700);return;}togglePack(idx);},[packOrders,okihaiChecks,cautionChecks,flyerChecks,campaign,togglePack]);
   
+    // グループデータ（ピッキング用）
   const pickGroups = (() => {
     const codes: string[] = [];
     for (const it of pickItems) { if (!codes.includes(it.code)) codes.push(it.code); }
@@ -180,7 +192,7 @@ export default function App(){
   const totalPickQty=pickItems.reduce((s,r)=>s+r.qty,0);
   const pickAllDone=pickChecks.length>0&&pickChecks.every(Boolean);
   const packAllDone=packChecks.length>0&&packChecks.every(Boolean);
-  const carrierLabel=carrier==="sagawa"?"佐川急便":carrier==="yamato"?"ヤマト運輸":"全商品一括";
+  const carrierLabel=carrier==="sagawa"?"佐川急便":carrier==="yamato"?"ヤマト運輸":carrier==="yamatoHarai"?"ヤマト発払い":"全商品一括";
 
   return(<div className="max-w-[780px] mx-auto min-h-dvh flex flex-col">
 
@@ -188,10 +200,17 @@ export default function App(){
     {phase==="home"&&<><div className="pt-10 px-5 text-center"><p className="font-[Roboto] font-black text-[11px] tracking-[0.2em] uppercase" style={{color:S.green}}>DAICHU TOOLS</p><h1 className="font-[Roboto] font-black text-[42px] leading-[0.95] tracking-[-1.6px] mt-2.5">PACKING<br/><span style={{color:S.green}}>SUPPORT</span></h1><p className="text-[13px] mt-3.5 tracking-[0.02em]" style={{color:S.grey}}>ピッキング・梱包作業支援ダッシュボード</p></div>
     <div className="flex-1 flex flex-col gap-6 px-5 pt-9 pb-6">
       {err&&<div className="flex items-center gap-2.5 px-4 py-3.5 text-sm" style={{background:S.s2,borderLeft:`3px solid ${S.red}`,color:S.red}}>{Ic.warn(18,"#e4250e")}{err}</div>}
-      <div className="rounded overflow-hidden" style={{background:S.s1,border:`1px solid ${S.bd}`}}><div className="flex items-center gap-3 px-5 py-4" style={{borderBottom:`1px solid ${S.bd}`}}>{Ic.file(18,"#00fa27")}<div><p className="font-[Roboto] font-extrabold text-[11px] tracking-[0.12em] uppercase" style={{color:S.green}}>STEP 1</p><p className="text-base tracking-[-0.02em]">注文詳細CSVを読み込む</p></div></div><div className="p-5"><label className="block rounded text-center cursor-pointer relative py-9 px-5" style={{border:parsedData?`2px solid ${S.green}`:`2px dashed ${S.bd}`}}><input type="file" accept=".csv" onChange={handleCSV} disabled={uploading} className="absolute inset-0 opacity-0 cursor-pointer"/><div className="flex justify-center mb-3.5">{uploading?Ic.pkg(32,"#00fa27"):parsedData?Ic.chkC(32,"#00fa27"):Ic.up(32,"#7e8085")}</div><p className="text-sm" style={{color:parsedData?S.green:S.grey}}>{uploading?"読み込み中...":parsedData?"読み込み完了（タップで再読み込み）":"CROSS MALL 注文詳細CSVをアップロード"}</p>{parsedData&&<p className="text-xs mt-1.5" style={{color:S.grey}}>佐川 {parsedData.sagawa.orders.length}件 / ヤマト {parsedData.yamato.orders.length}件</p>}</label></div></div>
+      <div className="rounded overflow-hidden" style={{background:S.s1,border:`1px solid ${S.bd}`}}><div className="flex items-center gap-3 px-5 py-4" style={{borderBottom:`1px solid ${S.bd}`}}>{Ic.file(18,"#00fa27")}<div><p className="font-[Roboto] font-extrabold text-[11px] tracking-[0.12em] uppercase" style={{color:S.green}}>STEP 1</p><p className="text-base tracking-[-0.02em]">注文詳細CSVを読み込む</p></div></div><div className="p-5"><label className="block rounded text-center cursor-pointer relative py-9 px-5" style={{border:parsedData?`2px solid ${S.green}`:`2px dashed ${S.bd}`}}><input type="file" accept=".csv" onChange={handleCSV} disabled={uploading} className="absolute inset-0 opacity-0 cursor-pointer"/><div className="flex justify-center mb-3.5">{uploading?Ic.pkg(32,"#00fa27"):parsedData?Ic.chkC(32,"#00fa27"):Ic.up(32,"#7e8085")}</div><p className="text-sm" style={{color:parsedData?S.green:S.grey}}>{uploading?"読み込み中...":parsedData?"読み込み完了（タップで再読み込み）":"CROSS MALL 注文詳細CSVをアップロード"}</p>{parsedData&&<p className="text-xs mt-1.5" style={{color:S.grey}}>佐川 {parsedData.sagawa.orders.length}件 / ヤマト {parsedData.yamato.orders.length}件{parsedData.yamatoHarai.orders.length>0&&` / 発払い ${parsedData.yamatoHarai.orders.length}件`}</p>}</label></div></div>
       <div className="rounded overflow-hidden" style={{background:S.s1,border:`1px solid ${S.bd}`}}><button onClick={()=>setShowSettings(!showSettings)} className="w-full flex items-center gap-3 px-5 py-4 cursor-pointer text-left" style={{background:"transparent",border:"none",borderBottom:showSettings?`1px solid ${S.bd}`:"none"}}>{Ic.gear(18,"#7e8085")}<div className="flex-1"><p className="text-[14px]">チラシ同封キャンペーン設定</p></div><span className="text-[12px]" style={{color:S.grey}}>{showSettings?"閉じる":"開く"}</span></button>{showSettings&&<div className="p-4 flex flex-col gap-2">{(["yahoo","rakuten","mercari","amazon"] as StoreKey[]).map(key=>{const conf=STORE_CONFIG[key];const active=campaign[key];return<button key={key} onClick={()=>{const next={...campaign,[key]:!active};setCampaign(next);saveCampaign(next);}} className="flex items-center gap-3 px-4 py-3 rounded cursor-pointer transition-all" style={{background:active?`${conf.color}18`:S.s2,border:`1px solid ${active?conf.color:S.bd}`}}><span className="w-3 h-3 rounded-full shrink-0" style={{background:conf.color}}/><p className="flex-1 text-[15px] text-left" style={{color:active?conf.color:S.grey}}>{conf.label}</p><span className="font-[Roboto] font-extrabold text-[12px]" style={{color:active?conf.color:S.grey}}>{active?"ON":"OFF"}</span></button>;})}</div>}</div>
       {parsedData&&<div className="flex flex-col gap-4">{([["sagawa","佐川急便",parsedData.sagawa],["yamato","ヤマト運輸",parsedData.yamato]] as const).map(([key,label,data])=><div key={key} className="rounded overflow-hidden" style={{background:S.s1,border:`1px solid ${S.bd}`}}><div className="flex items-center gap-3 px-5 py-4" style={{borderBottom:`1px solid ${S.bd}`}}>{key==="sagawa"?Ic.truck(20,"#00fa27"):Ic.cat(20,"#fff")}<div><p className="text-[17px]">{label}</p><p className="text-[12px] mt-0.5" style={{color:S.grey}}>{data.orders.length}件</p></div></div><div className="p-4 flex gap-3"><button onClick={()=>startPhase(key,"picking")} disabled={data.pickingItems.length===0} className="flex-1 flex flex-col items-center gap-1.5 py-5 rounded cursor-pointer transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-default" style={{background:S.s2,border:`2px solid ${S.bd}`}}>{Ic.pkg(22,"#00fa27")}<p className="text-[15px]">ピッキング</p><p className="text-[12px]" style={{color:S.grey}}>{data.pickingItems.length}種 {data.totalPickingQty}点</p></button><button onClick={()=>startPhase(key,"packing")} disabled={data.orders.length===0} className="flex-1 flex flex-col items-center gap-1.5 py-5 rounded cursor-pointer transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-default" style={{background:S.s2,border:`2px solid ${S.bd}`}}>{Ic.clip(22,"#00fa27")}<p className="text-[15px]">梱包</p><p className="text-[12px]" style={{color:S.grey}}>{data.orders.length}件</p></button></div></div>)}
-        <button onClick={()=>startPhase("all","picking")} disabled={parsedData.sagawa.pickingItems.length+parsedData.yamato.pickingItems.length===0} className="w-full flex items-center justify-center gap-3 py-5 rounded cursor-pointer transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-default" style={{background:S.s2,border:`2px solid ${S.bd}`}}>{Ic.pkg(22,"#00fa27")}<div className="text-left"><p className="text-[15px]">全商品一括ピッキング</p><p className="text-[12px]" style={{color:S.grey}}>佐川+ヤマト {parsedData.sagawa.totalPickingQty+parsedData.yamato.totalPickingQty}点</p></div></button>
+        {parsedData.yamatoHarai.orders.length>0&&<div className="rounded overflow-hidden" style={{background:S.s1,border:`1px solid ${S.bd}`}}>
+          <div className="flex items-center gap-3 px-5 py-4" style={{borderBottom:`1px solid ${S.bd}`}}>{Ic.truck(20,"#f97316")}<div><p className="text-[17px]">ヤマト発払い</p><p className="text-[12px] mt-0.5" style={{color:S.grey}}>{parsedData.yamatoHarai.orders.length}件</p></div></div>
+          <div className="p-4 flex gap-3">
+            <button onClick={()=>startPhase("yamatoHarai","picking")} disabled={parsedData.yamatoHarai.pickingItems.length===0} className="flex-1 flex flex-col items-center gap-1.5 py-5 rounded cursor-pointer transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-default" style={{background:S.s2,border:`2px solid ${S.bd}`}}>{Ic.pkg(22,"#f97316")}<p className="text-[15px]">ピッキング</p><p className="text-[12px]" style={{color:S.grey}}>{parsedData.yamatoHarai.pickingItems.length}種 {parsedData.yamatoHarai.totalPickingQty}点</p></button>
+            <button onClick={()=>startPhase("yamatoHarai","packing")} disabled={parsedData.yamatoHarai.orders.length===0} className="flex-1 flex flex-col items-center gap-1.5 py-5 rounded cursor-pointer transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-default" style={{background:S.s2,border:`2px solid ${S.bd}`}}>{Ic.clip(22,"#f97316")}<p className="text-[15px]">梱包</p><p className="text-[12px]" style={{color:S.grey}}>{parsedData.yamatoHarai.orders.length}件</p></button>
+          </div>
+        </div>}
+        <button onClick={()=>startPhase("all","picking")} disabled={parsedData.sagawa.pickingItems.length+parsedData.yamato.pickingItems.length+parsedData.yamatoHarai.pickingItems.length===0} className="w-full flex items-center justify-center gap-3 py-5 rounded cursor-pointer transition-all active:scale-[0.97] disabled:opacity-30 disabled:cursor-default" style={{background:S.s2,border:`2px solid ${S.bd}`}}>{Ic.pkg(22,"#00fa27")}<div className="text-left"><p className="text-[15px]">全商品一括ピッキング</p><p className="text-[12px]" style={{color:S.grey}}>全配送便合計 {parsedData.sagawa.totalPickingQty+parsedData.yamato.totalPickingQty+parsedData.yamatoHarai.totalPickingQty}点</p></div></button>
       </div>}
     </div></>}
 

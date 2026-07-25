@@ -1,6 +1,6 @@
 // src/App.tsx — DAICHU 梱包作業支援ツール v2
 import { useState, useEffect, useCallback, useRef } from "react";
-import { parseOrderCSV } from "./parsers";
+import { parseOrderCSV, comparePickingItems } from "./parsers";
 import type { PickingItem, Product, Order, ParsedData, CarrierData } from "./parsers";
 import { getProductUrl, getProductUrlForPicking } from "./productLinks";
 
@@ -69,7 +69,7 @@ function buildAllPickingItems(data: ParsedData): PickingItem[] {
     if (ex) { ex.qty += item.qty; } else { merged.set(key, { ...item }); }
   }
   const items = [...merged.values()];
-  items.sort((a, b) => { const aM=a.code.startsWith("mercari-"),bM=b.code.startsWith("mercari-"); if(aM!==bM)return aM?1:-1; if(a.code!==b.code)return a.code.localeCompare(b.code,"ja"); return 0; });
+  items.sort(comparePickingItems);
   items.forEach((it, i) => { it.id = i; });
   return items;
 }

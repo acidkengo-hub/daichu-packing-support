@@ -201,6 +201,7 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
       }
     }
 
+    // 商品名の補完（同一コードで名前が空のものを埋める）
     const nameMap = new Map<string, string>();
     for (const item of merged.values()) {
       if (item.name && !nameMap.has(item.code)) {
@@ -213,10 +214,11 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
       }
     }
 
-    let id = 0;
-    const items: PickingItem[] = [];
-    for (const item of merged.values()) {
-      items.push({ ...item, id: id++ });
+    // ソート → ID採番
+    const items = [...merged.values()];
+    items.sort(comparePickingItems);
+    for (let i = 0; i < items.length; i++) {
+      items[i].id = i;
     }
     return items;
   }
@@ -248,4 +250,48 @@ export async function parseOrderCSV(file: File): Promise<ParsedData> {
       totalPickingQty: yamatoHaraiPicking.reduce((s, i) => s + i.qty, 0),
     },
   };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ピッキング順ソート（通常ピッキング / 一括ピッキング 共通）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function sizeOrderOf(attr: string): number {
+  const s = attr.trim().toUpperCase();
+  if (s.startsWith("XXXL") || s.startsWith("3XL")) return 70;
+  if (s.startsWith("XXL") || s.startsWith("2XL")) return 60;
+  if (s.startsWith("XL")) return 50;
+  if (s.startsWith("XS")) return 10;
+  if (/^S([(\s]|$)/.test(s)) return 20;
+  if (/^M([(\s]|$)/.test(s)) return 30;
+  if (/^L([(\s]|$)/.test(s)) return 40;
+  if (attr.includes("フリー")) return 35;
+  const m = attr.match(/(\d+\.?\d*)/);
+  if (m) return parseFloat(m[1]);
+  return 999;
+}
+
+/**
+ * ピッキング表示順の比較関数
+ * ① mercari- は最後尾 → ② 商品コード順 → ③ サイズ小→大 → ④ 属性文字列（順序固定）
+ */
+export function comparePickingItems(a: PickingItem, b: PickingItem): number {
+  const aM = a.code.startsWith("mercari-");
+  const bM = b.code.startsWith("mercari-");
+  if (aM !== bM) return aM ? 1 : -1;
+
+  if (a.code !== b.code) return a.code.localeCompare(b.code, "ja");
+
+  const sa = Math.min(
+    sizeOrderOf(a.attr1) < 999 ? sizeOrderOf(a.attr1) : 999,
+    sizeOrderOf(a.attr2) < 999 ? sizeOrderOf(a.attr2) : 999
+  );
+  const sb = Math.min(
+    sizeOrderOf(b.attr1) < 999 ? sizeOrderOf(b.attr1) : 999,
+    sizeOrderOf(b.attr2) < 999 ? sizeOrderOf(b.attr2) : 999
+  );
+  if (sa !== sb) return sa - sb;
+
+  // 同サイズ内はカラー等の属性文字列で順序を固定
+  return `${a.attr1}${a.attr2}`.localeCompare(`${b.attr1}${b.attr2}`, "ja");
 }

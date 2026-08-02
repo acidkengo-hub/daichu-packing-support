@@ -50,7 +50,7 @@ const CAUTION_PREFIXES = ["sandal-004", "sandal-007", "sandal-008", "m-sandal-"]
 const needsCautionSheet = (o: Order): boolean => o.products.some(p => CAUTION_PREFIXES.some(pre => p.code.startsWith(pre)));
 
 // カード下部に「カラー確認」帯を出す商品（色間違いが起きやすいもの）
-const COLOR_CONFIRM_CODES = ["pet-008", "apron-001"];
+const COLOR_CONFIRM_CODES = ["pet-008", "pet-017", "apron-001"];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // カラースウォッチ
@@ -122,8 +122,57 @@ function findColorAttr(p: Product | PickingItem): { attr: string; sw: Swatch; ot
   return null;
 }
 
-const SWIMWEAR_LABELS: Record<string, string> = { "ladiesfashion-002":"ビキニ・セパレート","ladiesfashion-010":"ワンピース無地 (na002)","ladiesfashion-013":"ワンピース花柄 (na004)" };
-const isSwimwear = (p: Product): boolean => p.code in SWIMWEAR_LABELS;
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 商品タイプ（取り違えやすい商品の識別バッジ）
+//   label : バッジに出す短い識別名
+//   short : SEOキーワード列の代わりに出す短縮商品名（省略時は元の商品名を表示）
+//   color : 一目で見分けるための識別色
+// 新しく紛らわしい商品が出たらこの表に1行追加するだけで全画面に反映される
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+type ProductType = { label: string; short?: string; color: string };
+
+// コードの前方一致で判定する。長いキーから順に照合するため定義順は問わない
+const PRODUCT_TYPE_TABLE: Record<string, ProductType> = {
+  // ── ペットマット（サイズ表記が S/M/L/XL で重複し寸法も紛らわしい） ──
+  "pet-017": { label: "布・トイレマット",   short: "布製トイレマット（洗える・滑り止め）", color: "#C08552" },
+  "pet-008": { label: "冷感・クールマット", short: "冷感クールマット（夏用・接触冷感）",   color: "#22D3EE" },
+
+  // ── サンダル（穴あき系が3種あり見た目が酷似） ──
+  "sandal-002wakeari": { label: "麻スリッパ【訳あり】",   color: "#D4C5A0" },
+  "sandal-004wakeari": { label: "ベランダ【訳あり】",     color: "#FB923C" },
+  "sandal-007wakeari": { label: "網目【訳あり】",         color: "#C084FC" },
+  "sandal-008wakeari": { label: "厚底【訳あり】",         color: "#F472B6" },
+  "sandal-002": { label: "麻・室内スリッパ", short: "麻スリッパ（室内・リネン）",     color: "#D4C5A0" },
+  "sandal-004": { label: "ベランダ・穴あき", short: "ベランダサンダル（穴あき・7色）", color: "#FB923C" },
+  "sandal-007": { label: "網目・穴あき",     short: "網目サンダル（穴あき）",         color: "#C084FC" },
+  "sandal-008": { label: "厚底・PVC",       short: "厚底サンダル（PVC・クッション）", color: "#F472B6" },
+  "sandal-101": { label: "もこもこ・冬用",   short: "もこもこシューズ（冬用・裏起毛）", color: "#A5B4FC" },
+  // メルカリ版（商品名にサイズが含まれるため short は付けない）
+  "m-sandal-002": { label: "麻・室内スリッパ", color: "#D4C5A0" },
+  "m-sandal-014": { label: "ベランダ・穴あき", color: "#FB923C" },
+  "m-sandal-017": { label: "網目・穴あき",     color: "#C084FC" },
+  "m-sandal-018": { label: "厚底・PVC",       color: "#F472B6" },
+  "m-sandal-101": { label: "もこもこ・冬用",   color: "#A5B4FC" },
+
+  // ── 水着（レギュラー2種＋花柄・ハイウエスト） ──
+  "ladiesfashion-002": { label: "ビキニ・セパレート",   short: "ビキニ（ホルターネック）",       color: "#60A5FA" },
+  "ladiesfashion-010": { label: "ワンピース・無地",     short: "ワンピース水着 無地（na002）",   color: "#FBBF24" },
+  "ladiesfashion-013": { label: "ワンピース・花柄",     short: "ワンピース水着 花柄（na004）",   color: "#F9A8D4" },
+  "ladiesfashion-015": { label: "ビキニ・ハイウエスト", short: "ビキニ ハイウエスト（na006）",   color: "#A78BFA" },
+};
+
+// 長いキーを優先（sandal-004wakeari が sandal-004 より先に一致するように）
+const PRODUCT_TYPE_KEYS = Object.keys(PRODUCT_TYPE_TABLE).sort((a, b) => b.length - a.length);
+
+function getProductType(code: string): ProductType | null {
+  for (const k of PRODUCT_TYPE_KEYS) { if (code.startsWith(k)) return PRODUCT_TYPE_TABLE[k]; }
+  return null;
+}
+
+/** 表示用の商品名（短縮名があればそちらを使う） */
+function displayName(code: string, name: string): string {
+  return getProductType(code)?.short ?? name;
+}
 
 // ━━━ 店舗カラー ━━━
 type StoreKey = "yahoo"|"rakuten"|"mercari"|"amazon"|"other";
@@ -259,10 +308,19 @@ function SummaryRow({label,value,valueColor}:{label:string;value:string;valueCol
     <span style={{color:S.grey}}>{label}</span><span style={{color:valueColor||S.white}}>{value}</span></div>;
 }
 
-function SwimwearBadge({code}:{code:string}){
-  const l=SWIMWEAR_LABELS[code]; if(!l)return null;
-  return <span className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-[Roboto] font-extrabold tracking-[0.04em]"
-    style={{background:"#1e3a5f",color:"#60a5fa",border:"1px solid #2563EB44"}}>{l}</span>;
+/** 商品タイプの識別バッジ。取り違えやすい商品を色と短い名前で一目で判別させる */
+function ProductTypeBadge({ code, size = "lg" }: { code: string; size?: "lg" | "sm" }) {
+  const t = getProductType(code);
+  if (!t) return null;
+  const big = size === "lg";
+  return (
+    <span className={`inline-flex items-center gap-2 rounded shrink-0 ${big ? "px-3.5 py-2" : "px-2.5 py-1"}`}
+      style={{ background: `${t.color}20`, border: `2px solid ${t.color}` }}>
+      <span className="rounded-full shrink-0" style={{ width: big ? 11 : 8, height: big ? 11 : 8, background: t.color }} />
+      <span className="font-[Roboto] font-extrabold tracking-[0.02em] whitespace-nowrap"
+        style={{ fontSize: big ? 19 : 13, color: t.color }}>{t.label}</span>
+    </span>
+  );
 }
 
 /** カラースウォッチ（丸）+ カラー名。暗色/白はリングで輪郭を出す */
@@ -576,7 +634,11 @@ export default function App(){
             <div className="mx-5 mt-3 flex items-center gap-3 px-5 py-4 rounded" style={{background:ng?"rgba(0,250,39,0.12)":S.s2,border:`1px solid ${ng?"rgba(0,250,39,0.3)":S.bd}`}}>
               <p className="font-[Roboto] font-black text-[22px] tracking-[-0.3px]" style={{color:S.green}}>{it.code}</p>
               <p className="font-[Roboto] font-extrabold text-[17px]" style={{color:S.grey}}>{gp}/{gi.length}</p>
-              <p className="flex-1 text-right text-[13px] truncate" style={{color:S.grey}}>{it.name.substring(0,25)}</p>
+              <div className="flex-1 flex justify-end min-w-0">
+                {getProductType(it.code)
+                  ?<ProductTypeBadge code={it.code} size="sm"/>
+                  :<p className="text-[13px] truncate" style={{color:S.grey}}>{it.name.substring(0,25)}</p>}
+              </div>
             </div>
             <div className="flex-1 flex flex-col gap-4 p-5">
               <div className="flex flex-col justify-center rounded min-h-[280px] p-7 transition-all duration-300" style={{background:S.s1,border:`2px solid ${done?S.green:S.bd}`,transitionTimingFunction:S.ease}}>
@@ -584,7 +646,8 @@ export default function App(){
                   <p className="font-[Roboto] font-black text-[32px] tracking-[-0.5px]" style={{color:S.green}}>{it.code}</p>
                   <a href={getProductUrlForPicking(it.code,it.name)} target="_blank" rel="noopener noreferrer" className="shrink-0 p-2 rounded transition-all active:scale-90" style={{background:S.s2,border:`1px solid ${S.bd}`}} onClick={e=>e.stopPropagation()}>{Ic.link(20,"#7e8085")}</a>
                 </div>
-                <p className="text-[16px] leading-[1.35] mt-2" style={{color:S.dim}}>{it.name}</p>
+                {getProductType(it.code)&&<div className="mt-2.5"><ProductTypeBadge code={it.code}/></div>}
+                <p className="text-[16px] leading-[1.35] mt-2" style={{color:S.dim}}>{displayName(it.code,it.name)}</p>
                 <div className="flex flex-col gap-2 mt-5">
                   {col
                     ?<>
@@ -621,8 +684,11 @@ export default function App(){
               const col=findColorAttr(item);
               return<div key={item.id}>
                 {isNewGroup&&<div className="mt-5 mb-2 first:mt-0">
-                  <p className="font-[Roboto] font-black text-[17px] tracking-[-0.2px] px-1" style={{color:S.green}}>{item.code}</p>
-                  <p className="text-[12px] px-1 truncate" style={{color:S.grey}}>{item.name.substring(0,35)}</p>
+                  <div className="flex items-center gap-2.5 px-1 flex-wrap">
+                    <p className="font-[Roboto] font-black text-[17px] tracking-[-0.2px]" style={{color:S.green}}>{item.code}</p>
+                    <ProductTypeBadge code={item.code} size="sm"/>
+                  </div>
+                  <p className="text-[12px] px-1 truncate mt-0.5" style={{color:S.grey}}>{displayName(item.code,item.name).substring(0,35)}</p>
                 </div>}
                 <button onClick={()=>togglePick(i)}
                   className="w-full flex items-center gap-3 px-4 py-4 rounded mb-2 cursor-pointer transition-all active:scale-[0.98] text-left min-h-[64px]"
@@ -656,7 +722,10 @@ export default function App(){
               style={{background:gAllDone?"rgba(0,250,39,0.12)":S.s2,border:`1px solid ${gAllDone?"rgba(0,250,39,0.3)":S.bd}`}}>
               <p className="font-[Roboto] font-black text-[22px] tracking-[-0.3px]" style={{color:S.green}}>{g.code}</p>
               <p className="font-[Roboto] font-extrabold text-[17px]" style={{color:S.grey}}>{gChecked}/{g.items.length}</p>
-              <p className="flex-1 text-right text-[12px]" style={{color:S.grey}}>グループ {groupIdx+1}/{pickGroups.length}</p>
+              <div className="flex-1 flex items-center justify-end gap-2.5 min-w-0">
+                <ProductTypeBadge code={g.code} size="sm"/>
+                <p className="text-[12px] shrink-0" style={{color:S.grey}}>グループ {groupIdx+1}/{pickGroups.length}</p>
+              </div>
             </div>
             <div className="flex-1 flex flex-col gap-2 p-5">
               <div className="rounded p-5 transition-all duration-300" style={{background:S.s1,border:`2px solid ${gAllDone?S.green:S.bd}`,transitionTimingFunction:S.ease}}>
@@ -664,7 +733,8 @@ export default function App(){
                   <p className="font-[Roboto] font-black text-[28px] tracking-[-0.5px]" style={{color:S.green}}>{g.code}</p>
                   <a href={getProductUrlForPicking(g.code,g.name)} target="_blank" rel="noopener noreferrer" className="shrink-0 p-2 rounded transition-all active:scale-90" style={{background:S.s2,border:`1px solid ${S.bd}`}} onClick={e=>e.stopPropagation()}>{Ic.link(20,"#7e8085")}</a>
                 </div>
-                <p className="text-[14px] leading-[1.35] mb-4" style={{color:S.dim}}>{g.name}</p>
+                {getProductType(g.code)&&<div className="mb-2.5"><ProductTypeBadge code={g.code}/></div>}
+                <p className="text-[14px] leading-[1.35] mb-4" style={{color:S.dim}}>{displayName(g.code,g.name)}</p>
                 {g.items.map(item=>{
                   const idx=item.id;const checked=pickChecks[idx];
                   const col=findColorAttr(item);
@@ -758,8 +828,8 @@ export default function App(){
                     <p className="font-[Roboto] font-black text-[26px] tracking-[-0.3px]" style={{color:S.green}}>{o.products.length>1?`${pi+1}. `:""}{p.code}</p>
                     {pu&&<a href={pu} target="_blank" rel="noopener noreferrer" className="shrink-0 p-1.5 rounded transition-all active:scale-90" style={{background:S.s1,border:`1px solid ${S.bd}`}} onClick={e=>e.stopPropagation()}>{Ic.link(18,"#7e8085")}</a>}
                   </div>
-                  <p className="text-[15px] leading-[1.35] mt-1" style={{color:S.dim}}>{p.name}</p>
-                  {isSwimwear(p)&&<div className="mt-1.5"><SwimwearBadge code={p.code}/></div>}
+                  {getProductType(p.code)&&<div className="mt-2"><ProductTypeBadge code={p.code}/></div>}
+                  <p className="text-[15px] leading-[1.35] mt-2" style={{color:S.dim}}>{displayName(p.code,p.name)}</p>
                   {col
                     ?<div className="flex items-center gap-3 mt-2.5 flex-wrap">
                       <ColorChip sw={col.sw} label={col.attr} size={24} textSize={26}/>
